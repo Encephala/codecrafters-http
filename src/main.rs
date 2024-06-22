@@ -1,4 +1,4 @@
-use std::{io::{Read, Write}, net::{TcpListener, TcpStream}};
+use std::{io::{Read, Write}, net::{TcpListener, TcpStream}, path::PathBuf};
 
 #[tokio::main]
 async fn main() {
@@ -27,15 +27,16 @@ async fn handle_connection(stream: &mut TcpStream) {
         message if message.starts_with("GET / ") => {
             stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
         },
-        message if message.starts_with("GET /echo/") => handle_echo(stream, message).await,
-        message if message.starts_with("GET /user-agent") => handle_user_agent(stream, message).await,
+        message if message.starts_with("GET /echo/") => handle_echo(stream, message),
+        message if message.starts_with("GET /user-agent") => handle_user_agent(stream, message),
+        message if message.starts_with("GET /files/") => handle_file(stream, message),
         _ => {
             stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
         },
     }
 }
 
-async fn handle_echo(stream: &mut TcpStream, message: &str) {
+fn handle_echo(stream: &mut TcpStream, message: &str) {
     let path = message.split(' ').nth(1).unwrap();
 
     let parameter = path.split('/').nth(2).unwrap();
@@ -48,7 +49,7 @@ async fn handle_echo(stream: &mut TcpStream, message: &str) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-async fn handle_user_agent(stream: &mut TcpStream, message: &str) {
+fn handle_user_agent(stream: &mut TcpStream, message: &str) {
     let mut user_agent = String::new();
 
     for line in message.lines() {
@@ -65,4 +66,49 @@ async fn handle_user_agent(stream: &mut TcpStream, message: &str) {
     );
 
     stream.write_all(response.as_bytes()).unwrap();
+}
+
+fn handle_file(stream: &mut TcpStream, message: &str) {
+    let path = message.split(' ').nth(1).unwrap();
+
+    let parameter = path.split('/').nth(2).unwrap();
+
+    // TODO: Read CLI parameters
+    let args: Vec<String> = std::env::args().collect();
+
+    let mut directory = String::new();
+    let mut next_is_path = false;
+
+    for arg in args {
+        if arg == "--directory" {
+            next_is_path = true;
+            continue;
+        }
+
+        if next_is_path {
+            directory = arg;
+            break;
+        }
+    }
+
+    dbg!(&directory);
+
+    let file_path = PathBuf::from(directory).join(parameter);
+
+    if !file_path.exists() {
+        let message = "HTTP/1.1 404 Not Found\r\n\r\n";
+
+        stream.write_all(message.as_bytes()).unwrap();
+    }
+
+    let contents = std::fs::read(file_path).unwrap();
+
+    let header = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+        contents.len()
+    );
+
+    let message = header.bytes().chain(contents).collect::<Vec<_>>();
+
+    stream.write_all(&message).unwrap();
 }
