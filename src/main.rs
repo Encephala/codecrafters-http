@@ -1,25 +1,15 @@
 use std::{io::{Read, Write}, net::{TcpListener, TcpStream}};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let mut buffer = [0; 256];
+                println!("New connection from {:?}", stream.peer_addr());
 
-                stream.read(&mut buffer).unwrap();
-
-                match std::str::from_utf8(&buffer).unwrap() {
-                    message if message.starts_with("GET / ") => {
-                        stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
-                    },
-                    message if message.starts_with("GET /echo/") => handle_echo(&mut stream, message),
-                    message if message.starts_with("GET /user-agent") => handle_user_agent(&mut stream, message),
-                    _ => {
-                        stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
-                    },
-                }
+                tokio::spawn(async move { handle_connection(&mut stream).await });
             }
             Err(e) => {
                 println!("error: {}", e);
@@ -28,7 +18,24 @@ fn main() {
     }
 }
 
-fn handle_echo(stream: &mut TcpStream, message: &str) {
+async fn handle_connection(stream: &mut TcpStream) {
+    let mut buffer = [0; 256];
+
+    stream.read(&mut buffer).unwrap();
+
+    match std::str::from_utf8(&buffer).unwrap() {
+        message if message.starts_with("GET / ") => {
+            stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+        },
+        message if message.starts_with("GET /echo/") => handle_echo(stream, message).await,
+        message if message.starts_with("GET /user-agent") => handle_user_agent(stream, message).await,
+        _ => {
+            stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
+        },
+    }
+}
+
+async fn handle_echo(stream: &mut TcpStream, message: &str) {
     let path = message.split(' ').nth(1).unwrap();
 
     let parameter = path.split('/').nth(2).unwrap();
@@ -41,7 +48,7 @@ fn handle_echo(stream: &mut TcpStream, message: &str) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn handle_user_agent(stream: &mut TcpStream, message: &str) {
+async fn handle_user_agent(stream: &mut TcpStream, message: &str) {
     let mut user_agent = String::new();
 
     for line in message.lines() {
