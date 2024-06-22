@@ -43,10 +43,36 @@ fn handle_echo(stream: &mut TcpStream, message: &str) {
 
     let parameter = path.split('/').nth(2).unwrap();
 
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{parameter}",
-        parameter.len()
-    );
+    let mut encoding = None;
+    
+    for line in message.lines() {
+        if line.starts_with("Accept-Encoding") {
+            let accepted_encoding = line.split(' ').nth(1).unwrap();
+
+            encoding = Some(accepted_encoding);
+        }
+    }
+
+    let mut response = if let Some("gzip") = encoding {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type:
+                text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            parameter.len()
+        )
+    } else if let Some(_) = encoding {
+        // Unaccepted encoding
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
+            parameter.len()
+        )
+    } else {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
+            parameter.len()
+        )
+    };
+
+    response.push_str(parameter);
 
     stream.write_all(response.as_bytes()).unwrap();
 }
@@ -121,7 +147,10 @@ fn handle_file(stream: &mut TcpStream, message: &str) {
             .unwrap()
             .to_owned();
 
-        body.retain(|character| character != '\0');
+        // I initialise buffer as a bunch of nulls, so have to remove them from the end
+        // There are more efficient ways to do this, but HTML just sends strings,
+        // and strings are null terminated, the body can't contain a null so it works 🤷
+        body.retain(|character| character as u8 != 0);
 
         std::fs::write(file_path, body).unwrap();
 
