@@ -29,7 +29,9 @@ async fn handle_connection(stream: &mut TcpStream) {
         },
         message if message.starts_with("GET /echo/") => handle_echo(stream, message),
         message if message.starts_with("GET /user-agent") => handle_user_agent(stream, message),
-        message if message.starts_with("GET /files/") => handle_file(stream, message),
+
+        // This is great logic, don't @me
+        message if message.contains("/files/") => handle_file(stream, message),
         _ => {
             stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
         },
@@ -73,7 +75,6 @@ fn handle_file(stream: &mut TcpStream, message: &str) {
 
     let parameter = path.split('/').nth(2).unwrap();
 
-    // TODO: Read CLI parameters
     let args: Vec<String> = std::env::args().collect();
 
     let mut directory = String::new();
@@ -91,24 +92,39 @@ fn handle_file(stream: &mut TcpStream, message: &str) {
         }
     }
 
-    dbg!(&directory);
-
     let file_path = PathBuf::from(directory).join(parameter);
 
-    if !file_path.exists() {
-        let message = "HTTP/1.1 404 Not Found\r\n\r\n";
+    if message.starts_with("GET") {
+        if !file_path.exists() {
+            let message = "HTTP/1.1 404 Not Found\r\n\r\n";
 
-        stream.write_all(message.as_bytes()).unwrap();
+            stream.write_all(message.as_bytes()).unwrap();
+        }
+
+        let contents = std::fs::read(file_path).unwrap();
+
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+            contents.len()
+        );
+
+        let message = header.bytes().chain(contents).collect::<Vec<_>>();
+
+        stream.write_all(&message).unwrap();
+
+        return;
     }
 
-    let contents = std::fs::read(file_path).unwrap();
+    if message.starts_with("POST") {
+        let mut body = message.split("\r\n\r\n")
+            .nth(1)
+            .unwrap()
+            .to_owned();
 
-    let header = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-        contents.len()
-    );
+        body.retain(|character| character != '\0');
 
-    let message = header.bytes().chain(contents).collect::<Vec<_>>();
+        std::fs::write(file_path, body).unwrap();
 
-    stream.write_all(&message).unwrap();
+        stream.write_all(b"HTTP/1.1 201 Created\r\n\r\n").unwrap();
+    }
 }
