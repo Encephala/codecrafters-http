@@ -46,30 +46,34 @@ fn handle_echo(stream: &mut TcpStream, message: &str) {
     let mut encoding = None;
     
     for line in message.lines() {
-        if line.starts_with("Accept-Encoding") {
-            let accepted_encoding = line.split(' ').nth(1).unwrap();
+        if let Some(encodings) = line.strip_prefix("Accept-Encoding: ") {
+            let accepted_encodings = encodings.split(", ").collect::<Vec<_>>();
 
-            encoding = Some(accepted_encoding);
+            encoding = Some(accepted_encodings);
         }
     }
 
-    let mut response = if let Some("gzip") = encoding {
-        format!(
-            "HTTP/1.1 200 OK\r\nContent-Type:
-                text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
-            parameter.len()
-        )
-    } else if let Some(_) = encoding {
-        // Unaccepted encoding
-        format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
-            parameter.len()
-        )
-    } else {
-        format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
-            parameter.len()
-        )
+    let mut response = match encoding {
+        Some(encodings) => {
+            if encodings.contains(&"gzip") {
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type:
+                        text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+                    parameter.len()
+                )
+            } else {
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
+                    parameter.len()
+                )
+            }
+        },
+        None => {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
+                parameter.len()
+            )
+        },
     };
 
     response.push_str(parameter);
