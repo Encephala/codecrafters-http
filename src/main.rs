@@ -12,10 +12,22 @@ fn main() {
 
                 match std::str::from_utf8(&buffer).unwrap() {
                     message if message.starts_with("GET / ") => {
-                        stream.write(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+                        stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+                    },
+                    message if message.starts_with("GET /echo/") => {
+                        let path = message.split(' ').nth(1).unwrap();
+
+                        let parameter = path.split('/').nth(2).unwrap();
+
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{parameter}",
+                            parameter.len()
+                        );
+
+                        stream.write_all(response.as_bytes()).unwrap();
                     },
                     _ => {
-                        stream.write(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
+                        stream.write_all(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
                     },
                 }
             }
