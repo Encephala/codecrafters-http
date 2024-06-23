@@ -53,32 +53,41 @@ fn handle_echo(stream: &mut TcpStream, message: &str) {
         }
     }
 
-    let mut response = match encoding {
+    let response = match encoding {
         Some(encodings) => {
             if encodings.contains(&"gzip") {
-                format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type:
-                        text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
-                    parameter.len()
-                )
+                let mut gzip_process = std::process::Command::new("gzip")
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .expect("failed to encode");
+
+                gzip_process.stdin.as_mut().unwrap().write_all(parameter.as_bytes()).unwrap();
+
+                let encoded = gzip_process.wait_with_output().unwrap().stdout;
+
+                let message = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+                    encoded.len()
+                );
+
+                message.bytes().chain(encoded).collect::<Vec<_>>()
             } else {
                 format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{parameter}",
                     parameter.len()
-                )
+                ).into_bytes()
             }
         },
         None => {
             format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{parameter}",
                 parameter.len()
-            )
+            ).into_bytes()
         },
     };
 
-    response.push_str(parameter);
-
-    stream.write_all(response.as_bytes()).unwrap();
+    stream.write_all(&response).unwrap();
 }
 
 fn handle_user_agent(stream: &mut TcpStream, message: &str) {
